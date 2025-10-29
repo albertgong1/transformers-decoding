@@ -249,16 +249,41 @@ class LlamaAttention(nn.Module):
         if self.config._attn_implementation != "eager":
             attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
-        attn_output, attn_weights = attention_interface(
-            self,
-            query_states,
-            key_states,
-            value_states,
-            attention_mask,
-            dropout=0.0 if not self.training else self.attention_dropout,
-            scaling=self.scaling,
-            **kwargs,
-        )
+        if True:
+            if query_states.shape[2] == key_states.shape[2]:
+                assert query_states.dtype == key_states.dtype == value_states.dtype == attention_mask.dtype
+            else:
+                if hasattr(past_key_values.layers[self.layer_idx], "_log_key_weights"):
+                    B, _, L, S = attention_mask.shape
+                    # if self.layer_idx == 0:
+                    #     import pdb; pdb.set_trace()
+                    attention_mask = attention_mask.expand(B, query_states.shape[1], L, S)
+                    log_key_weights = torch.zeros_like(attention_mask)
+                    log_key_weights[:, :, :, : past_key_values.layers[self.layer_idx]._log_key_weights.shape[-1]] = repeat_kv(past_key_values.layers[self.layer_idx]._log_key_weights.unsqueeze(2), self.num_key_value_groups)
+                    attention_mask = torch.where(attention_mask==0, log_key_weights, attention_mask)
+
+            attn_output, attn_weights = attention_interface(
+                self,
+                query_states.to(attention_mask.dtype),
+                key_states.to(attention_mask.dtype),
+                value_states.to(attention_mask.dtype),
+                attention_mask,
+                dropout=0.0 if not self.training else self.attention_dropout,
+                scaling=self.scaling,
+                **kwargs,
+            )
+            attn_output = attn_output.to(query_states.dtype)
+        else:
+            attn_output, attn_weights = attention_interface(
+                self,
+                query_states,
+                key_states,
+                value_states,
+                attention_mask,
+                dropout=0.0 if not self.training else self.attention_dropout,
+                scaling=self.scaling,
+                **kwargs,
+            )
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
         attn_output = self.o_proj(attn_output)
