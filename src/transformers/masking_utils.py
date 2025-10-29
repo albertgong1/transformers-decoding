@@ -793,7 +793,11 @@ def create_causal_mask(
 
     batch_size, dtype = input_embeds.shape[0], input_embeds.dtype
     mask_factory_function = causal_mask_function
-    mask_interface = ALL_MASK_ATTENTION_FUNCTIONS[config._attn_implementation]
+    if False:
+        mask_interface = ALL_MASK_ATTENTION_FUNCTIONS[config._attn_implementation]
+    else:
+        # always use eager interface
+        mask_interface = ALL_MASK_ATTENTION_FUNCTIONS["eager"]
 
     # Do not allow skip if we are compiling (this is to match BC)
     # TODO: cyril -> probably revisit and remove this, but a lot of tests rely on it
@@ -821,18 +825,32 @@ def create_causal_mask(
         mask_factory_function = and_masks(mask_factory_function, packed_sequence_mask_function(packed_sequence_mask))
         allow_is_causal_skip = False
 
-    # We now create the mask
-    causal_mask = mask_interface(
-        batch_size=batch_size,
-        cache_position=cache_position,
-        kv_length=kv_length,
-        kv_offset=kv_offset,
-        mask_function=mask_factory_function,
-        attention_mask=attention_mask,
-        allow_is_causal_skip=allow_is_causal_skip,  # additional kwarg for sdpa
-        dtype=dtype,  # Additional kwarg for eager
-        config=config,  # Pass the config as well, in case someone wants to easily have their own mask_interface
-    )
+    if hasattr(past_key_values, "_log_key_weights"):
+        # We now create the mask
+        causal_mask = mask_interface(
+            batch_size=batch_size,
+            cache_position=cache_position,
+            kv_length=kv_length,
+            kv_offset=kv_offset,
+            mask_function=mask_factory_function,
+            attention_mask=attention_mask,
+            allow_is_causal_skip=allow_is_causal_skip,  # additional kwarg for sdpa
+            dtype=torch.float32,  # Additional kwarg for eager
+            config=config,  # Pass the config as well, in case someone wants to easily have their own mask_interface
+        )
+    else:
+        # We now create the mask
+        causal_mask = mask_interface(
+            batch_size=batch_size,
+            cache_position=cache_position,
+            kv_length=kv_length,
+            kv_offset=kv_offset,
+            mask_function=mask_factory_function,
+            attention_mask=attention_mask,
+            allow_is_causal_skip=allow_is_causal_skip,  # additional kwarg for sdpa
+            dtype=dtype,  # Additional kwarg for eager
+            config=config,  # Pass the config as well, in case someone wants to easily have their own mask_interface
+        )
     return causal_mask
 
 
