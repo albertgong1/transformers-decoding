@@ -825,7 +825,7 @@ def create_causal_mask(
         mask_factory_function = and_masks(mask_factory_function, packed_sequence_mask_function(packed_sequence_mask))
         allow_is_causal_skip = False
 
-    if hasattr(past_key_values, "_log_key_weights"):
+    if len(past_key_values.layers) > 0 and hasattr(past_key_values.layers[layer_idx], "_log_key_weights"):
         # We now create the mask
         causal_mask = mask_interface(
             batch_size=batch_size,
