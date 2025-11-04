@@ -254,6 +254,7 @@ class LlamaAttention(nn.Module):
                 assert query_states.dtype == key_states.dtype == value_states.dtype == attention_mask.dtype
             else:
                 if hasattr(past_key_values.layers[self.layer_idx], "_log_key_weights"):
+                    assert attention_mask.dtype == torch.float32, f"attention_mask should be float32, but got {attention_mask.dtype}"
                     B, _, L, S = attention_mask.shape
                     # if self.layer_idx == 0:
                     #     import pdb; pdb.set_trace()
@@ -404,19 +405,19 @@ class LlamaModel(LlamaPreTrainedModel):
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
 
-        causal_mask = create_causal_mask(
-            config=self.config,
-            input_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            cache_position=cache_position,
-            past_key_values=past_key_values,
-            position_ids=position_ids,
-        )
-
         hidden_states = inputs_embeds
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
         for decoder_layer in self.layers[: self.config.num_hidden_layers]:
+            causal_mask = create_causal_mask(
+                config=self.config,
+                input_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+                cache_position=cache_position,
+                past_key_values=past_key_values,
+                position_ids=position_ids,
+                layer_idx=decoder_layer.self_attn.layer_idx,
+            )
             hidden_states = decoder_layer(
                 hidden_states,
                 attention_mask=causal_mask,

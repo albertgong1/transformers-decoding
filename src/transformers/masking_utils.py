@@ -751,6 +751,7 @@ def create_causal_mask(
     position_ids: Optional[torch.Tensor] = None,
     or_mask_function: Optional[Callable] = None,
     and_mask_function: Optional[Callable] = None,
+    layer_idx: Optional[int] = None,
 ) -> Optional[Union[torch.Tensor, BlockMask]]:
     """
     Create a standard causal mask based on the attention implementation used (stored in the config). If `past_key_values`
@@ -778,12 +779,15 @@ def create_causal_mask(
         and_mask_function (`Callable`, optional):
             An optional mask function to combine with the causal mask function (by doing the intersection of both). This is
             useful to easily overlay another mask on top of the causal one, for example for image tokens handling.
+        layer_idx (`int`, optional):
+            If `past_key_values` is not None, this is the layer index of the cache from which to get the key-value
+            length and offset. Indeed, for hybrid caches, different layers may return different lengths.
     """
     # If we have an hybrid cache structure, here we want to create the mask for the full layers
-    if hasattr(past_key_values, "is_sliding") and False in past_key_values.is_sliding:
-        layer_idx = past_key_values.is_sliding.index(False)
-    else:
-        layer_idx = 0
+    # if hasattr(past_key_values, "is_sliding") and False in past_key_values.is_sliding:
+    #     layer_idx = past_key_values.is_sliding.index(False)
+    # else:
+    #     layer_idx = 0
 
     early_exit, attention_mask, packed_sequence_mask, kv_length, kv_offset = _preprocess_mask_arguments(
         config, input_embeds, attention_mask, cache_position, past_key_values, position_ids, layer_idx
@@ -825,7 +829,9 @@ def create_causal_mask(
         mask_factory_function = and_masks(mask_factory_function, packed_sequence_mask_function(packed_sequence_mask))
         allow_is_causal_skip = False
 
-    if len(past_key_values.layers) > 0 and hasattr(past_key_values.layers[layer_idx], "_log_key_weights"):
+    # Only use float32 if all layers are populated
+    # One way to check this is if the number of layers is greater than the layer index
+    if len(past_key_values.layers) > layer_idx and hasattr(past_key_values.layers[layer_idx], "_log_key_weights"):
         # We now create the mask
         causal_mask = mask_interface(
             batch_size=batch_size,
