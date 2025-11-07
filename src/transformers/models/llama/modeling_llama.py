@@ -262,18 +262,28 @@ class LlamaAttention(nn.Module):
                     log_key_weights = torch.zeros_like(attention_mask)
                     log_key_weights[:, :, :, : past_key_values.layers[self.layer_idx]._log_key_weights.shape[-1]] = repeat_kv(past_key_values.layers[self.layer_idx]._log_key_weights.unsqueeze(2), self.num_key_value_groups)
                     attention_mask = torch.where(attention_mask==0, log_key_weights, attention_mask)
+        
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
 
+            query_states_ = query_states.to(attention_mask.dtype)
+            key_states_ = key_states.to(attention_mask.dtype)
+            value_states_ = value_states.to(attention_mask.dtype)
+            start.record()
             attn_output, attn_weights = attention_interface(
                 self,
-                query_states.to(attention_mask.dtype),
-                key_states.to(attention_mask.dtype),
-                value_states.to(attention_mask.dtype),
+                query_states_,
+                key_states_,
+                value_states_,
                 attention_mask,
                 dropout=0.0 if not self.training else self.attention_dropout,
                 scaling=self.scaling,
                 **kwargs,
             )
+            end.record()
             attn_output = attn_output.to(query_states.dtype)
+            if 'query_events' in kwargs:
+                kwargs['query_events'][str(self.layer_idx)].append((start, end))
         else:
             attn_output, attn_weights = attention_interface(
                 self,
