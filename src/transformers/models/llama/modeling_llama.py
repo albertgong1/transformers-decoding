@@ -266,9 +266,16 @@ class LlamaAttention(nn.Module):
             start = torch.cuda.Event(enable_timing=True)
             end = torch.cuda.Event(enable_timing=True)
 
-            query_states_ = query_states.to(attention_mask.dtype)
-            key_states_ = key_states.to(attention_mask.dtype)
-            value_states_ = value_states.to(attention_mask.dtype)
+            if False:
+                query_states_ = query_states.to(attention_mask.dtype)
+                key_states_ = key_states.to(attention_mask.dtype)
+                value_states_ = value_states.to(attention_mask.dtype)
+            else:
+                query_states_ = query_states
+                key_states_ = key_states
+                value_states_ = value_states
+                attention_mask = attention_mask.to(query_states.dtype)
+                assert query_states.dtype == key_states.dtype == value_states.dtype == attention_mask.dtype == torch.bfloat16
             start.record()
             attn_output, attn_weights = attention_interface(
                 self,
@@ -282,7 +289,7 @@ class LlamaAttention(nn.Module):
             )
             end.record()
             attn_output = attn_output.to(query_states.dtype)
-            if 'query_events' in kwargs:
+            if 'query_events' in kwargs and kwargs['query_events'] is not None:
                 kwargs['query_events'][str(self.layer_idx)].append((start, end))
         else:
             attn_output, attn_weights = attention_interface(
